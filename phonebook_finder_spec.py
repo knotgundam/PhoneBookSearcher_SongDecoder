@@ -79,6 +79,15 @@ class GetPhoneNumberTestCase(unittest.TestCase):
     def test_get_phone_number_from_phonebook_line(self):
         self.assertEqual(get_phone_number("+1-111-544-8973 <Peter Pan> LA"), "1-111-544-8973")
 
+    def test_get_phone_number_from_phonebook_line_with_2_digit_prefix(self):
+        self.assertEqual(get_phone_number("+12-111-544-8973 <Peter Pan> LA"), "12-111-544-8973")
+
+    def test_get_phone_number_from_phonebook_line_with_no_phone_num(self):
+        self.assertEqual(get_phone_number("+1x2-1x1-5x4-8xx3 <Peter Pan> LA"), "")
+
+    def test_get_phone_number_from_phonebook_line_with_incorrect_prefix(self):
+        self.assertEqual(get_phone_number("-12-111-544-8973 <Peter Pan> LA"), "")
+
 
 if __name__ == '__main__':
     unittest.main()

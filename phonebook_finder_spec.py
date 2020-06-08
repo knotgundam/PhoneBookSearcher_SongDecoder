@@ -1,5 +1,13 @@
 import unittest
-from phonebook.main import phone, separate_line, get_phone_number
+from unittest.mock import patch
+
+from phonebook.main import (
+    phone,
+    separate_line,
+    PhoneBookExtractor,
+    PhoneBookObject,
+    PhoneBookCleanser
+)
 
 
 class RequireTestCase(unittest.TestCase):
@@ -14,7 +22,7 @@ class RequireTestCase(unittest.TestCase):
          + "<Sophia Loren> +1-421-674-8974 Bern TP-46017\n <Peter O'Brien> High Street +1-908-512-2222; CC-47209\n" \
          + "<Anastasia> +48-421-674-8974 Via Quirinal Roma\n <P Salinger> Main Street, +1-098-512-2222, Denver\n" \
          + "<C Powel> *+19-421-674-8974 Chateau des Fosses Strasbourg F-68000\n <Bernard Deltheil> +1-498-512-2222; " \
-           "Mount Av.Eldorado\n" \
+           "Mount Av. Eldorado\n" \
          + "+1-099-500-8000 <Peter Crush> Labrador Bd.\n +1-931-512-4855 <William Saurin> Bison Street CQ-23071\n" \
          + "<P Salinge> Main Street, +1-098-512-2222, Denve\n"
 
@@ -75,18 +83,97 @@ class LineSeparateTestCase(unittest.TestCase):
         self.assertEqual(separate_line("A\n\nB"), ["A", "B"])
 
 
-class GetPhoneNumberTestCase(unittest.TestCase):
+# PhoneBookExtractor test cases
+class GetRawPhoneNumberTestCase(unittest.TestCase):
     def test_get_phone_number_from_phonebook_line(self):
-        self.assertEqual(get_phone_number("+1-111-544-8973 <Peter Pan> LA"), "1-111-544-8973")
+        self.assertEqual(PhoneBookExtractor.get_raw_phone_number("+1-111-544-8973 <Peter Pan> LA"), "+1-111-544-8973")
 
     def test_get_phone_number_from_phonebook_line_with_2_digit_prefix(self):
-        self.assertEqual(get_phone_number("+12-111-544-8973 <Peter Pan> LA"), "12-111-544-8973")
+        self.assertEqual(PhoneBookExtractor.get_raw_phone_number("+12-111-544-8973 <Peter Pan> LA"), "+12-111-544-8973")
 
     def test_get_phone_number_from_phonebook_line_with_no_phone_num(self):
-        self.assertEqual(get_phone_number("+1x2-1x1-5x4-8xx3 <Peter Pan> LA"), "")
+        self.assertEqual(PhoneBookExtractor.get_raw_phone_number("+1x2-1x1-5x4-8xx3 <Peter Pan> LA"), "")
 
     def test_get_phone_number_from_phonebook_line_with_incorrect_prefix(self):
-        self.assertEqual(get_phone_number("-12-111-544-8973 <Peter Pan> LA"), "")
+        self.assertEqual(PhoneBookExtractor.get_raw_phone_number("-12-111-544-8973 <Peter Pan> LA"), "")
+
+
+class GetRawPersonTestCase(unittest.TestCase):
+    def test_get_person_from_phonebook_line(self):
+        self.assertEqual(PhoneBookExtractor.get_raw_person_name("+1-111-544-8973 <Peter Pan> LA"), "<Peter Pan>")
+
+    def test_get_person_from_phonebook_line__with_person_come_first(self):
+        self.assertEqual(PhoneBookExtractor.get_raw_person_name("<R Steell> Quora Street AB-47209 +1-481-512-2222"),
+                         "<R Steell>")
+
+    def test_should_not_get_person_from_phonebook_line__with_unmatch_pattern(self):
+        self.assertEqual(PhoneBookExtractor.get_raw_person_name(">R Steell< Quora Street AB-47209 +1-481-512-2222"), "")
+
+
+class ExtractRawAddressTestCase(unittest.TestCase):
+    def test_extract_raw_address(self):
+        self.assertEqual(
+            PhoneBookExtractor.extract_raw_address("+1-111-544-8973 <Peter Pan> LA", "+1-111-544-8973", "<Peter Pan>"),
+            "  LA"
+        )
+
+
+class GetPhonebookDictTestCase(unittest.TestCase):
+
+    @patch.object(PhoneBookExtractor, "extract_raw_address")
+    @patch.object(PhoneBookExtractor, "get_raw_person_name")
+    @patch.object(PhoneBookExtractor, "get_raw_phone_number")
+    def test_extract_phoneline(self, mock_phone_no, mock_person, mock_address):
+        mock_phone_no.return_value = "MYPHONE"
+        mock_person.return_value = "MYPERSON"
+        mock_address.return_value = "MYADDRESS"
+
+        expected_result = PhoneBookObject("MYPERSON", "MYPHONE", "MYADDRESS")
+        self.assertEqual(
+            PhoneBookExtractor.extract("+1-111-544-8973 <Peter Pan> LA"),
+            expected_result
+        )
+
+
+# PhoneBookObject test cases
+class PhoneBookObjectTestCase(unittest.TestCase):
+    class MockCleanser(PhoneBookCleanser):
+        @staticmethod
+        def cleanse_person_name(person_name: str):
+            return "CLEAN_PERSON_NAME"
+
+        @staticmethod
+        def cleanse_address(address: str):
+            return "CLEAN_ADDRESS"
+
+        @staticmethod
+        def cleanse_phone_number(phone_num: str):
+            return "CLEAN_PHONE_NO"
+
+    def test_clease_attribute(self):
+        my_phonebook_obj = PhoneBookObject("a", "b", "c")
+        my_phonebook_obj.cleanse(self.MockCleanser)
+        self.assertEqual(my_phonebook_obj.PhoneNumber, "CLEAN_PHONE_NO")
+        self.assertEqual(my_phonebook_obj.Person, "CLEAN_PERSON_NAME")
+        self.assertEqual(my_phonebook_obj.Address, "CLEAN_ADDRESS")
+
+
+# PhoneBookCleanser test cases
+class PhoneBookCleanserTestCase(unittest.TestCase):
+    def test_cleanse_phone_number(self):
+        self.assertEqual(PhoneBookCleanser.cleanse_phone_number("+11-111-111-1111"), "11-111-111-1111")
+
+    def test_cleanse_address(self):
+        self.assertEqual(PhoneBookCleanser.cleanse_address(" !@# THIS IS MY HOMETOWN"), "THIS IS MY HOMETOWN")
+
+    def test_cleanse_address_with_redundant_space_infix(self):
+        self.assertEqual(PhoneBookCleanser.cleanse_address(" !@# THIS IS MY__HOMETOWN"), "THIS IS MY HOMETOWN")
+
+    def test_cleanse_address_with_hyphens_in_address(self):
+        self.assertEqual(PhoneBookCleanser.cleanse_address(" !@# THIS IS MY-HOMETOWN"), "THIS IS MY-HOMETOWN")
+
+    def test_cleanse_person_name(self):
+        self.assertEqual(PhoneBookCleanser.cleanse_person_name("<Person Name>"), "Person Name")
 
 
 if __name__ == '__main__':
